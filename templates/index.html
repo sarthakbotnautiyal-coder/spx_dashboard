@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SPX 0DTE Scanner Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js?v=12"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --border:   #30363d;
+      --accent:   #1e88e5;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+      --green:    #3ddc84;
+      --red:      #ff4d4d;
+      --orange:   #ff9800;
+      --font:     'Courier New', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    header h1 { font-size: 1rem; letter-spacing: 0.08em; color: var(--accent); }
+
+    .status-bar { display: flex; gap: 24px; font-size: 0.8rem; flex-wrap: wrap; }
+    .status-item { display: flex; gap: 6px; align-items: center; }
+    .status-label { color: var(--muted); }
+    .status-value { color: var(--text); font-weight: bold; }
+
+    .legend {
+      display: flex;
+      gap: 16px;
+      margin-left: auto;
+      font-size: 0.78rem;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot-green  { background: var(--green); }
+    .dot-red    { background: var(--red); }
+    .dot-orange { background: var(--orange); }
+
+    /* ── Filter Bar ── */
+    #filter-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      font-size: 0.78rem;
+    }
+
+    .filter-group { display: flex; align-items: center; gap: 6px; }
+    .filter-group-label { color: var(--muted); font-size: 0.75rem; padding-right: 4px; white-space: nowrap; }
+    .filter-date { display: flex; align-items: center; gap: 4px; }
+
+    input[type="date"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 0.78rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+      width: 130px;
+    }
+
+    select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 0.78rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    .entry-filter {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      background: var(--bg);
+    }
+
+    .entry-filter-label { color: var(--text); font-size: 0.78rem; min-width: 60px; }
+
+    .entry-filter select,
+    .entry-filter input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .entry-filter input[type="text"] { width: 70px; }
+
+    input[type="checkbox"] {
+      accent-color: var(--accent);
+      cursor: pointer;
+      width: 14px;
+      height: 14px;
+      vertical-align: middle;
+    }
+
+    .divider {
+      width: 1px;
+      height: 24px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+
+    #apply-btn {
+      background: var(--accent);
+      border: 1px solid var(--accent);
+      color: #fff;
+      font-family: var(--font);
+      font-size: 0.78rem;
+      padding: 4px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #apply-btn:hover { opacity: 0.85; }
+    #apply-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Chart area ── */
+    #chart-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #chart { flex: 1; min-height: 0; }
+
+    /* ── Loading spinner ── */
+    #spinner {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    #spinner.hidden { display: none; }
+
+    .spinner-ring {
+      width: 48px;
+      height: 48px;
+      border: 4px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Controls ── */
+    #controls {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      font-size: 0.8rem;
+      flex-wrap: wrap;
+    }
+
+    label { color: var(--muted); }
+    #last-updated { color: var(--muted); margin-left: auto; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📊 SPX 0DTE SCANNER</h1>
+  <div class="status-bar">
+    <div class="status-item">
+      <span class="status-label">Showing:</span>
+      <span class="status-value" id="stat-count">—</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">SPX:</span>
+      <span class="status-value" id="stat-spx">—</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Call Δ:</span>
+      <span class="status-value" id="stat-cdelta">—</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Put Δ:</span>
+      <span class="status-value" id="stat-pdelta">—</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Breaches:</span>
+      <span class="status-value" id="stat-breaches">—</span>
+    </div>
+  </div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot dot-green"></div>No Exit</div>
+    <div class="legend-item"><div class="legend-dot dot-orange"></div>L2 Prox Exit</div>
+    <div class="legend-item"><div class="legend-dot dot-red"></div>L1 Breach</div>
+  </div>
+</header>
+
+<div id="filter-bar">
+  <div class="filter-group">
+    <span class="filter-group-label">Date:</span>
+    <div class="filter-date">
+      <input type="date" id="date-from" />
+      <span style="color:var(--muted)">→</span>
+      <input type="date" id="date-to" />
+    </div>
+  </div>
+  <div class="divider"></div>
+  <div class="filter-group">
+    <span class="filter-group-label">Entry:</span>
+    <div class="entry-filter">
+      <span class="entry-filter-label">10w Prem</span>
+      <select id="filter-10w-op">
+        <option value="">Off</option>
+        <option value=">">&gt;</option>
+        <option value="<">&lt;</option>
+        <option value=">=">&gt;=</option>
+        <option value="<=">&lt;=</option>
+        <option value="==">=</option>
+      </select>
+      <input type="text" id="filter-10w-val" inputmode="decimal" autocorrect="off" spellcheck="false" placeholder="e.g. 0.10" />
+    </div>
+    <div class="entry-filter">
+      <span class="entry-filter-label">20w Prem</span>
+      <select id="filter-20w-op">
+        <option value="">Off</option>
+        <option value=">">&gt;</option>
+        <option value="<">&lt;</option>
+        <option value=">=">&gt;=</option>
+        <option value="<=">&lt;=</option>
+        <option value="==">=</option>
+      </select>
+      <input type="text" id="filter-20w-val" inputmode="decimal" autocorrect="off" spellcheck="false" placeholder="e.g. 0.20" />
+    </div>
+    <div class="entry-filter" title="RSI gate: RSI above upper threshold → calls only; RSI below lower threshold → puts only; in-band → skip both. Leave blank to disable.">
+      <span class="entry-filter-label">RSI</span>
+      <input type="text" id="filter-rsi-lower" inputmode="decimal" autocorrect="off" spellcheck="false" placeholder="Lower" style="width:52px" />
+      <span style="color:var(--muted);font-size:0.72rem">–</span>
+      <input type="text" id="filter-rsi-upper" inputmode="decimal" autocorrect="off" spellcheck="false" placeholder="Upper" style="width:52px" />
+    </div>
+    <div class="divider"></div>
+    <div class="entry-filter">
+      <span class="entry-filter-label">EMx</span>
+      <select id="filter-em-op">
+        <option value="">Off</option>
+        <option value=">">&gt;</option>
+        <option value="<">&lt;</option>
+        <option value=">=">&gt;=</option>
+        <option value="<=">&lt;=</option>
+        <option value="not_between">Range</option>
+      </select>
+      <input type="text" id="filter-em-val"  inputmode="decimal" autocorrect="off" spellcheck="false" placeholder="e.g. 1.0" style="width:55px" />
+      <input type="text" id="filter-em-val2" inputmode="decimal" autocorrect="off" spellcheck="false" placeholder="e.g. 2.0" style="width:55px" />
+    </div>
+  </div>
+  <div class="divider"></div>
+  <div class="filter-group">
+    <span class="filter-group-label">Exit:</span>
+    <div class="entry-filter" title="L2 proximity exit: mark dot orange when SPX comes within [mult]×EM of the short strike before day-end (mirrors engine L2 logic). L1 breach (strike crossed) is always shown in red.">
+      <span class="entry-filter-label">Prox Exit</span>
+      <input type="checkbox" id="filter-prox-exit" />
+      <input type="text" id="filter-prox-mult" inputmode="decimal" autocorrect="off" spellcheck="false" placeholder="1.0" style="width:46px" />
+      <span style="color:var(--muted);font-size:0.72rem">×EM</span>
+    </div>
+    <button id="apply-btn">Apply</button>
+  </div>
+</div>
+
+<div id="chart-wrap">
+  <div id="spinner"><div class="spinner-ring"></div></div>
+  <div id="chart"></div>
+</div>
+
+<div id="controls">
+  <label for="refresh-sec">Refresh:</label>
+  <select id="refresh-sec">
+    <option value="0">Off</option>
+    <option value="30" selected>30s</option>
+    <option value="60">60s</option>
+  </select>
+  <span id="last-updated">Last updated: —</span>
+</div>
+
+<script>
+console.log('[init] Dashboard JS loaded');
+
+// ── State ──────────────────────────────────────────────────────────────────
+const state = {
+  fromDate:    null,
+  toDate:      null,
+  premium10Op:  '',
+  premium10Val: '',
+  premium20Op:  '',
+  premium20Val: '',
+  rsiLower: '', rsiUpper: '',
+  emOp:    '', emVal:    '', emVal2:    '',
+  proxExit: false,
+  proxMult: '',
+};
+
+let availableMaxDate = null;
+
+// ── Apply button handler ────────────────────────────────────────────────────
+document.getElementById('apply-btn').addEventListener('click', () => {
+  console.log('[apply] Button clicked');
+  state.fromDate    = document.getElementById('date-from').value || null;
+  state.toDate       = document.getElementById('date-to').value   || null;
+  state.premium10Op  = document.getElementById('filter-10w-op').value;
+  state.premium10Val = document.getElementById('filter-10w-val').value.trim();
+  state.premium20Op  = document.getElementById('filter-20w-op').value;
+  state.premium20Val = document.getElementById('filter-20w-val').value.trim();
+  state.rsiLower = document.getElementById('filter-rsi-lower').value.trim();
+  state.rsiUpper = document.getElementById('filter-rsi-upper').value.trim();
+  state.emOp     = document.getElementById('filter-em-op').value;
+  state.emVal    = document.getElementById('filter-em-val').value.trim();
+  state.emVal2   = document.getElementById('filter-em-val2').value.trim();
+  state.proxExit = document.getElementById('filter-prox-exit').checked;
+  state.proxMult = document.getElementById('filter-prox-mult').value.trim();
+  console.log('[apply] State:', JSON.stringify(state));
+  loadFigure();
+});
+
+// ── Init: load date range, default to latest available day ─────────────────
+async function init() {
+  console.log('[init] Fetching date range...');
+  try {
+    const resp = await fetch('/api/dates');
+    if (!resp.ok) { console.error('[init] /api/dates failed:', resp.status); initComplete(); return; }
+    const data = await resp.json();
+    console.log('[init] /api/dates response:', JSON.stringify(data));
+    if (data.max_date) {
+      availableMaxDate = data.max_date;
+      state.fromDate = availableMaxDate;
+      state.toDate   = availableMaxDate;
+      document.getElementById('date-from').value = availableMaxDate;
+      document.getElementById('date-to').value   = availableMaxDate;
+      console.log('[init] Default date set to:', availableMaxDate);
+    }
+  } catch (e) {
+    console.error('[init] Exception:', e);
+  }
+  initComplete();
+}
+
+function initComplete() {
+  console.log('[init] Calling loadFigure...');
+  loadFigure();
+  scheduleRefresh();
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function fmtDelta(v) {
+  if (v == null || isNaN(v)) return 'n/a';
+  return (v >= 0 ? '+' : '') + v.toFixed(4);
+}
+
+// ── Load + render chart ─────────────────────────────────────────────────────
+async function loadFigure() {
+  console.log('[loadFigure] Starting...');
+  const spinner = document.getElementById('spinner');
+  spinner.classList.remove('hidden');
+
+  const params = new URLSearchParams();
+  if (state.fromDate) { params.set('from', state.fromDate); }
+  if (state.toDate)   { params.set('to',   state.toDate);   }
+
+  const p10op  = state.premium10Op;
+  const p10val  = state.premium10Val;
+  const p20op   = state.premium20Op;
+  const p20val  = state.premium20Val;
+
+  console.log('[loadFigure] Filter values — p10op:', p10op, 'p10val:', p10val, 'p20op:', p20op, 'p20val:', p20val, 'rsiLower:', state.rsiLower, 'rsiUpper:', state.rsiUpper);
+
+  if (p10op && p10val !== '') {
+    const v = parseFloat(p10val);
+    if (!isNaN(v)) {
+      params.set('premium_10_op',  p10op);
+      params.set('premium_10_val', String(v));
+    }
+  }
+  if (p20op && p20val !== '') {
+    const v = parseFloat(p20val);
+    if (!isNaN(v)) {
+      params.set('premium_20_op',  p20op);
+      params.set('premium_20_val', String(v));
+    }
+  }
+  const rsiLowerV = parseFloat(state.rsiLower);
+  const rsiUpperV = parseFloat(state.rsiUpper);
+  if (!isNaN(rsiLowerV) && !isNaN(rsiUpperV)) {
+    params.set('rsi_lower', String(rsiLowerV));
+    params.set('rsi_upper', String(rsiUpperV));
+  }
+  if (state.emOp && state.emVal !== '') {
+    params.set('em_op', state.emOp);
+    if (state.emVal)  params.set('em_val',  state.emVal);
+    if (state.emVal2) params.set('em_val2', state.emVal2);
+  }
+  if (state.proxExit) {
+    params.set('prox_exit', '1');
+    const mult = parseFloat(state.proxMult);
+    params.set('prox_mult', isNaN(mult) ? '1.0' : String(mult));
+  }
+
+  const qs   = params.toString();
+  const url  = '/api/figure' + (qs ? '?' + qs : '');
+  console.log('[loadFigure] Fetching URL:', url);
+
+  let resp;
+  try {
+    resp = await fetch(url, { cache: 'no-store' });
+  } catch (err) {
+    console.error('[loadFigure] Fetch failed:', err);
+    spinner.classList.add('hidden');
+    return;
+  }
+
+  console.log('[loadFigure] Response status:', resp.status);
+  if (!resp.ok) {
+    console.error('[loadFigure] Response not OK');
+    spinner.classList.add('hidden');
+    return;
+  }
+
+  const result = await resp.json();
+  console.log('[loadFigure] Got result — count:', result.count, 'total:', result.total_count);
+  console.log('[loadFigure] Traces:', (result.fig?.data || []).map(t => `${t.name}(${(t.x||[]).length})`).join(' | '));
+
+  renderChart(result);
+  updateStats(result);
+
+  spinner.classList.add('hidden');
+  console.log('[loadFigure] Done');
+}
+
+// ── Render chart ────────────────────────────────────────────────────────────
+function renderChart(result) {
+  const fig      = result.fig;
+  const chartDiv = document.getElementById('chart');
+
+  console.log('[renderChart] Starting...');
+
+  if (!fig || !fig.data || !fig.data.length) {
+    console.log('[renderChart] No data — purging chart');
+    Plotly.purge(chartDiv);
+    chartDiv.innerHTML = '<div style="text-align:center;color:var(--muted);padding:60px;font-size:0.9rem;">No data available.</div>';
+    return;
+  }
+
+  console.log('[renderChart] Calling Plotly.newPlot, traces:', fig.data.length);
+  Plotly.newPlot(chartDiv, fig.data, fig.layout || {}, { responsive: true }).then(() => {
+    console.log('[renderChart] Plotly.newPlot completed successfully');
+  }).catch(e => {
+    console.error('[renderChart] Plotly.newPlot error:', e);
+  });
+}
+
+// ── Update stats panel ─────────────────────────────────────────────────────
+function updateStats(result) {
+  const rows     = result.filtered_data || [];
+  const count    = result.count     ?? 0;
+  const totalCnt = result.total_count ?? count;
+
+  console.log('[updateStats] rows:', rows.length, 'count:', count, 'total:', totalCnt);
+
+  document.getElementById('stat-count').textContent =
+    (totalCnt !== count) ? `${count} / ${totalCnt}` : String(count);
+
+  if (rows.length === 0) {
+    ['stat-spx','stat-cdelta','stat-pdelta','stat-breaches'].forEach(id => {
+      document.getElementById(id).textContent = '—';
+    });
+    return;
+  }
+
+  const last = rows[rows.length - 1];
+  document.getElementById('stat-spx').textContent  =
+    (last.spx_spot != null) ? Number(last.spx_spot).toFixed(2) : '—';
+  document.getElementById('stat-cdelta').textContent = fmtDelta(last.call_delta);
+  document.getElementById('stat-pdelta').textContent = fmtDelta(last.put_delta);
+
+  let breachCount = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const row   = rows[i];
+    const callK = row.call_strike_003;
+    const putK  = row.put_strike_003;
+    let breached = false;
+    for (let j = i + 1; j < rows.length; j++) {
+      const frow  = rows[j];
+      const tsDate = new Date(frow.timestamp_est);
+      const h = tsDate.getHours() + tsDate.getTimezoneOffset() / 60;
+      if (h >= 16) break;
+      const spx = frow.spx_spot;
+      if (callK != null && !isNaN(spx) && spx >= callK) { breached = true; break; }
+      if (putK  != null && !isNaN(spx) && spx <= putK)  { breached = true; break; }
+    }
+    if (breached) breachCount++;
+  }
+  document.getElementById('stat-breaches').textContent = breachCount;
+
+  document.getElementById('last-updated').textContent =
+    'Last updated: ' + new Date().toLocaleTimeString();
+}
+
+// ── Auto-refresh ─────────────────────────────────────────────────────────────
+let refreshTimer = null;
+
+function scheduleRefresh() {
+  clearInterval(refreshTimer);
+  const secs = parseInt(document.getElementById('refresh-sec').value);
+  console.log('[scheduleRefresh] Setting interval to', secs, 'seconds');
+  if (secs > 0) {
+    refreshTimer = setInterval(loadFigure, secs * 1000);
+  }
+}
+
+document.getElementById('refresh-sec').addEventListener('change', scheduleRefresh);
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

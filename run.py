@@ -5,11 +5,16 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent))
 
-# Placeholder: Full dashboard app.py from monolith to be integrated
+from config import CONFIG
+
 if __name__ == "__main__":
-    print("🚀 SPX Dashboard")
-    print("Note: Full app.py and chart.py from monolith needs to be ported here")
-    print("This should serve the dashboard on port 5555 by default")
-    print("Reading from ../premium_extractor/data/scanner.db")
-    print("Reading from ../tradingView_signal_generator/data/tradingview.db")
+    from app import app
+
+    port = CONFIG.get("spx_dashboard", {}).get("port", 5555)
+    host = CONFIG.get("spx_dashboard", {}).get("host", "0.0.0.0")
+    debug = CONFIG.get("spx_dashboard", {}).get("debug", False)
+
+    print(f"🚀 SPX Dashboard starting on {host}:{port}")
+    app.run(host=host, port=port, debug=debug)
