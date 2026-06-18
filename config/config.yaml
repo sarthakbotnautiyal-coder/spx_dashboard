@@ -1,0 +1,16 @@
+spx_dashboard:
+  log_path: "logs"
+  port: 5555
+  host: "0.0.0.0"
+  debug: false
+
+# Data source references (external projects)
+data_sources:
+  scanner_db: "../premium_extractor/data/scanner.db"
+  tradingview_db: "../tradingView_signal_generator/data/tradingview.db"
+
+# Optional: Read from Supabase instead of local DBs (for cloud deployment)
+supabase:
+  enabled: false
+  url: ""
+  key: ""
