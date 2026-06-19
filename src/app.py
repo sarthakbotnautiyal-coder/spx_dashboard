@@ -5,8 +5,10 @@ Serves /api/scan_results and static index.html.
 
 import os
 import sqlite3
+import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 import sys
 
 from flask import Flask, jsonify, render_template, request
@@ -28,6 +30,48 @@ DB_PATH = str(Path(SCANNER_DB_PATH).resolve() if Path(SCANNER_DB_PATH).exists() 
 TV_DB = str(Path(TV_DB_PATH).resolve() if Path(TV_DB_PATH).exists() or Path(TV_DB_PATH).is_absolute() else Path(__file__).parent.parent.parent / TV_DB_PATH)
 
 EST_TZ  = "America/New_York"
+
+# ---------------------------------------------------------------------------
+# WAL resilience (TASK-2026-235)
+# ---------------------------------------------------------------------------
+
+# Max retry attempts on sqlite3.OperationalError when opening tradingview.db
+_TV_CONNECT_MAX_ATTEMPTS = 3
+# Backoff per attempt (seconds) — 0.2s, 0.4s, 0.6s
+_TV_CONNECT_BACKOFFS = (0.2, 0.4, 0.6)
+# sqlite connect timeout — short, so retry-loop drives recovery
+_TV_CONNECT_TIMEOUT = 2.0
+
+
+def _connect_tv_with_retry() -> sqlite3.Connection:
+    """Open tradingview.db with WAL-aware retry.
+
+    Reader-writer contention on the shared tradingview.db can surface as
+    ``sqlite3.OperationalError: unable to open database file`` even though
+    the file exists. Retry with short backoff and a 2s connect timeout.
+
+    Returns:
+        sqlite3.Connection with WAL journal mode enabled.
+
+    Raises:
+        RuntimeError: if all retry attempts fail.
+    """
+    last_err: Optional[Exception] = None
+    for attempt in range(1, _TV_CONNECT_MAX_ATTEMPTS + 1):
+        try:
+            conn = sqlite3.connect(TV_DB, timeout=_TV_CONNECT_TIMEOUT)
+            conn.execute("PRAGMA journal_mode = WAL;")
+            return conn
+        except sqlite3.OperationalError as e:
+            last_err = e
+            if attempt < _TV_CONNECT_MAX_ATTEMPTS:
+                backoff = _TV_CONNECT_BACKOFFS[attempt - 1]
+                time.sleep(backoff)
+                continue
+            break
+    raise RuntimeError(
+        f"Failed to open tradingview.db after {_TV_CONNECT_MAX_ATTEMPTS} attempts: {last_err}"
+    )
 
 
 @app.route("/")
@@ -149,7 +193,7 @@ def api_figure():
     # Load fundamentals from TradingView database (must happen before _count_filtered)
     fundamentals = None
     try:
-        tv_conn = sqlite3.connect(TV_DB)
+        tv_conn = _connect_tv_with_retry()
         fundamentals = tv_conn.execute("""
             SELECT received_at, price, rsi, macd_hist, adx,
                    bb_upper, bb_middle, bb_lower
