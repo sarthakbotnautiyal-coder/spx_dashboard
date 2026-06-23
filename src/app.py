@@ -19,7 +19,7 @@ from config import CONFIG
 
 from chart import build_figure
 
-app = Flask(__name__, template_folder="templates")
+app = Flask(__name__, template_folder="../templates", static_folder="../static")
 
 # Read paths from config
 SCANNER_DB_PATH = CONFIG.get("data_sources", {}).get("scanner_db", "../premium_extractor/data/scanner.db")
